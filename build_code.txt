@@ -1,0 +1,12 @@
+cmake -S liboqs -B liboqs/build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DOQS_BUILD_ONLY_LIB=ON \
+      -DOQS_ENABLE_KEM_ml_kem_768=ON \
+      -DOQS_ENABLE_SIG_ml_dsa_65=ON \
+      -DOQS_USE_AVX2_INSTRUCTIONS=ON \
+      -DOQS_USE_BMI2_INSTRUCTIONS=ON \
+      -DOQS_USE_POPCNT_INSTRUCTIONS=ON \
+      -DCMAKE_C_FLAGS="-march=native -O3" \
+      -DBUILD_SHARED_LIBS=OFF
+
+cmake --build liboqs/build -j$(nproc)
