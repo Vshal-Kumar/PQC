@@ -73,10 +73,10 @@ SHARED_OBJS = transport.o crypto/aead.o \
 
 SERVER_OBJS = $(SHARED_OBJS) client_registry.o
 
-.PHONY: all server server_rx server_tx client bench_pqc bench_nclient clean \
-        run-server run-rx run-tx run-bench run-nclient
+.PHONY: all server server_rx server_tx client bench_pqc bench_nclient bench_aead clean \
+        run-server run-rx run-tx run-bench run-nclient run-aead
 
-all: server server_rx server_tx client bench_pqc bench_nclient
+all: server server_rx server_tx client bench_pqc bench_nclient bench_aead
 
 # ── Server (multi-client core) ───────────────────────────────────
 server: server.c $(SERVER_OBJS)
@@ -108,6 +108,11 @@ bench_nclient: bench_nclient.c $(SHARED_OBJS)
 	$(CC) $(OPT) $(LTO) $(WARN) $(DEFS) $(INC) -o $@ $^ $(LIBS) $(LDFLAGS) -lm
 	@echo "Built: bench_nclient (x86_64)"
 
+# ── Benchmark (AEAD encryption/decryption demo & stats) ──────────
+bench_aead: bench_aead.c crypto/aead.o
+	$(CC) $(OPT) $(LTO) $(WARN) $(DEFS) $(INC) -o $@ $^ -lssl -lcrypto -lpthread -lm $(LDFLAGS)
+	@echo "Built: bench_aead (x86_64)"
+
 # ── Run targets ──────────────────────────────────────────────────
 run-server: server
 	./server
@@ -124,9 +129,12 @@ run-bench: bench_pqc
 run-nclient: bench_nclient
 	./bench_nclient
 
+run-aead: bench_aead
+	./bench_aead
+
 # ── Clean ────────────────────────────────────────────────────────
 clean:
-	rm -f server server_rx server_tx client bench_pqc bench_nclient \
+	rm -f server server_rx server_tx client bench_pqc bench_nclient bench_aead \
 	      transport.o client_registry.o \
 	      crypto/aead.o \
 	      wrappers/kem_wrapper.o wrappers/dsa_wrapper.o
