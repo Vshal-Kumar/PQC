@@ -39,7 +39,8 @@
 
 static int shake256_hash(uint8_t out[64], const uint8_t *in, size_t in_len) {
   EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-  if (!ctx) return -1;
+  if (!ctx)
+    return -1;
   if (EVP_DigestInit_ex(ctx, EVP_shake256(), NULL) != 1) {
     EVP_MD_CTX_free(ctx);
     return -1;
@@ -324,8 +325,10 @@ static void *client_thread(void *arg) {
   memcpy(hello + KEM_PK_BYTES, dsa_pk, DSA_PK_BYTES);
   memcpy(hello + KEM_PK_BYTES + DSA_PK_BYTES, c_nonce, 16);
 
-  size_t min_len = DSA_PK_BYTES + KEM_CT_BYTES + SESSION_ID_BYTES + 16 + DSA_SIG_BYTES;
-  uint8_t srv_hello[DSA_PK_BYTES + KEM_CT_BYTES + SESSION_ID_BYTES + 16 + DSA_SIG_BYTES + 128];
+  size_t min_len =
+      DSA_PK_BYTES + KEM_CT_BYTES + SESSION_ID_BYTES + 16 + DSA_SIG_BYTES;
+  uint8_t srv_hello[DSA_PK_BYTES + KEM_CT_BYTES + SESSION_ID_BYTES + 16 +
+                    DSA_SIG_BYTES + 128];
   ssize_t n = -1;
 
   for (int attempt = 0; attempt < 10; attempt++) {
@@ -363,16 +366,24 @@ static void *client_thread(void *arg) {
     memcpy(srv_sig, srv_hello + off, DSA_SIG_BYTES);
 
     /* Construct Server Handshake Transcript */
-    size_t tx_len = 16 + 16 + SESSION_ID_BYTES + KEM_PK_BYTES + DSA_PK_BYTES + DSA_PK_BYTES + KEM_CT_BYTES;
+    size_t tx_len = 16 + 16 + SESSION_ID_BYTES + KEM_PK_BYTES + DSA_PK_BYTES +
+                    DSA_PK_BYTES + KEM_CT_BYTES;
     uint8_t *tx = malloc(tx_len);
-    if (!tx) goto fail;
+    if (!tx)
+      goto fail;
     size_t tx_off = 0;
-    memcpy(tx + tx_off, c_nonce, 16); tx_off += 16;
-    memcpy(tx + tx_off, s_nonce, 16); tx_off += 16;
-    memcpy(tx + tx_off, session_id, SESSION_ID_BYTES); tx_off += SESSION_ID_BYTES;
-    memcpy(tx + tx_off, kem_pk, KEM_PK_BYTES); tx_off += KEM_PK_BYTES;
-    memcpy(tx + tx_off, dsa_pk, DSA_PK_BYTES); tx_off += DSA_PK_BYTES;
-    memcpy(tx + tx_off, srv_dsa_pk, DSA_PK_BYTES); tx_off += DSA_PK_BYTES;
+    memcpy(tx + tx_off, c_nonce, 16);
+    tx_off += 16;
+    memcpy(tx + tx_off, s_nonce, 16);
+    tx_off += 16;
+    memcpy(tx + tx_off, session_id, SESSION_ID_BYTES);
+    tx_off += SESSION_ID_BYTES;
+    memcpy(tx + tx_off, kem_pk, KEM_PK_BYTES);
+    tx_off += KEM_PK_BYTES;
+    memcpy(tx + tx_off, dsa_pk, DSA_PK_BYTES);
+    tx_off += DSA_PK_BYTES;
+    memcpy(tx + tx_off, srv_dsa_pk, DSA_PK_BYTES);
+    tx_off += DSA_PK_BYTES;
     memcpy(tx + tx_off, kem_ct, KEM_CT_BYTES);
 
     /* Hash Server Transcript */
@@ -384,7 +395,8 @@ static void *client_thread(void *arg) {
 
     /* Verify Server Signature */
     t0 = cpu_now();
-    if (dsa_verify(srv_sig, DSA_SIG_BYTES, server_tx_digest, 64, srv_dsa_pk) != 0) {
+    if (dsa_verify(srv_sig, DSA_SIG_BYTES, server_tx_digest, 64, srv_dsa_pk) !=
+        0) {
       free(tx);
       goto fail;
     }
@@ -539,19 +551,30 @@ int main(int argc, char *argv[]) {
   signal(SIGTERM, on_signal);
   signal(SIGPIPE, SIG_IGN);
 
-  g_num_msgs = 5; /* Handshake + 5 data messages for metrics */
-  if (argc > 3) {
-    fprintf(stderr, "Usage: %s [num_clients 1-4096] [server_ip]\n", argv[0]);
+  g_num_msgs = 5; /* Handshake + 5 data messages for metrics by default */
+  if (argc > 4) {
+    fprintf(stderr,
+            "Usage: %s [num_clients 1-4096] [num_messages >= 0] [server_ip]\n",
+            argv[0]);
     return 1;
   }
   if (argc > 1) {
     g_num_clients = atoi(argv[1]);
   }
   if (argc > 2) {
-    g_server_ip = argv[2];
+    g_num_msgs = atoi(argv[2]);
+  }
+  if (argc > 3) {
+    g_server_ip = argv[3];
   }
   if (g_num_clients < 1 || g_num_clients > 4096) {
-    fprintf(stderr, "Usage: %s [num_clients 1-4096] [server_ip]\n", argv[0]);
+    fprintf(stderr,
+            "Usage: %s [num_clients 1-4096] [num_messages >= 0] [server_ip]\n",
+            argv[0]);
+    return 1;
+  }
+  if (g_num_msgs < 0) {
+    fprintf(stderr, "Error: Number of messages must be >= 0.\n");
     return 1;
   }
 
@@ -622,7 +645,8 @@ int main(int argc, char *argv[]) {
     if (r->success) {
       success++;
       double serial_hs = r->kem_keygen_us + r->dsa_keygen_us + r->hs_total_us;
-      double max_kg = (r->kem_keygen_us > r->dsa_keygen_us) ? r->kem_keygen_us : r->dsa_keygen_us;
+      double max_kg = (r->kem_keygen_us > r->dsa_keygen_us) ? r->kem_keygen_us
+                                                            : r->dsa_keygen_us;
       double parallel_hs = max_kg + r->hs_total_us;
 
       stats_add(&s_kem_kg, r->kem_keygen_us);
@@ -698,11 +722,14 @@ int main(int argc, char *argv[]) {
   printf("│  Handshake Throughput               │  %20.1f   │  handshakes/sec  "
          "        │\n",
          hs_throughput);
-  printf("│  Network Handshake RTT (Average)    │  %20.3f   │  ms                      │\n",
+  printf("│  Network Handshake RTT (Average)    │  %20.3f   │  ms              "
+         "        │\n",
          stats_mean(&s_hs_net_rtt) / 1000.0);
-  printf("│  Total Handshake (Serial Avg)       │  %20.3f   │  ms                      │\n",
+  printf("│  Total Handshake (Serial Avg)       │  %20.3f   │  ms              "
+         "        │\n",
          stats_mean(&s_hs_serial) / 1000.0);
-  printf("│  Total Handshake (Parallel Avg)     │  %20.3f   │  ms                      │\n",
+  printf("│  Total Handshake (Parallel Avg)     │  %20.3f   │  ms              "
+         "        │\n",
          stats_mean(&s_hs_parallel) / 1000.0);
   printf("│  End-to-End Message RTT (Average)   │  %20.3f   │  ms              "
          "        │\n",
@@ -774,27 +801,37 @@ int main(int argc, char *argv[]) {
 
   printf("│  ML-DSA Verify (Client)        │  %12.3f  │  %11.3f  │  %11.3f  │  "
          "%11.3f  │  %5d  │\n",
-         stats_mean(&s_dsa_verify) / 1000.0, stats_stddev(&s_dsa_verify) / 1000.0,
+         stats_mean(&s_dsa_verify) / 1000.0,
+         stats_stddev(&s_dsa_verify) / 1000.0,
          (s_dsa_verify.n > 0 ? s_dsa_verify.min_us : 0.0) / 1000.0,
-         (s_dsa_verify.n > 0 ? s_dsa_verify.max_us : 0.0) / 1000.0, s_dsa_verify.n);
+         (s_dsa_verify.n > 0 ? s_dsa_verify.max_us : 0.0) / 1000.0,
+         s_dsa_verify.n);
 
-  printf("│  Network Handshake RTT (Net RTT)    │  %12.3f  │  %11.3f  │  %11.3f  │  "
+  printf("│  Network Handshake RTT (Net RTT)    │  %12.3f  │  %11.3f  │  "
+         "%11.3f  │  "
          "%11.3f  │  %5d  │\n",
-         stats_mean(&s_hs_net_rtt) / 1000.0, stats_stddev(&s_hs_net_rtt) / 1000.0,
+         stats_mean(&s_hs_net_rtt) / 1000.0,
+         stats_stddev(&s_hs_net_rtt) / 1000.0,
          (s_hs_net_rtt.n > 0 ? s_hs_net_rtt.min_us : 0.0) / 1000.0,
-         (s_hs_net_rtt.n > 0 ? s_hs_net_rtt.max_us : 0.0) / 1000.0, s_hs_net_rtt.n);
+         (s_hs_net_rtt.n > 0 ? s_hs_net_rtt.max_us : 0.0) / 1000.0,
+         s_hs_net_rtt.n);
 
-  printf("│  Total Handshake (Serial Est.)      │  %12.3f  │  %11.3f  │  %11.3f  │  "
+  printf("│  Total Handshake (Serial Est.)      │  %12.3f  │  %11.3f  │  "
+         "%11.3f  │  "
          "%11.3f  │  %5d  │\n",
          stats_mean(&s_hs_serial) / 1000.0, stats_stddev(&s_hs_serial) / 1000.0,
          (s_hs_serial.n > 0 ? s_hs_serial.min_us : 0.0) / 1000.0,
-         (s_hs_serial.n > 0 ? s_hs_serial.max_us : 0.0) / 1000.0, s_hs_serial.n);
+         (s_hs_serial.n > 0 ? s_hs_serial.max_us : 0.0) / 1000.0,
+         s_hs_serial.n);
 
-  printf("│  Total Handshake (Parallel Est.)    │  %12.3f  │  %11.3f  │  %11.3f  │  "
+  printf("│  Total Handshake (Parallel Est.)    │  %12.3f  │  %11.3f  │  "
+         "%11.3f  │  "
          "%11.3f  │  %5d  │\n",
-         stats_mean(&s_hs_parallel) / 1000.0, stats_stddev(&s_hs_parallel) / 1000.0,
+         stats_mean(&s_hs_parallel) / 1000.0,
+         stats_stddev(&s_hs_parallel) / 1000.0,
          (s_hs_parallel.n > 0 ? s_hs_parallel.min_us : 0.0) / 1000.0,
-         (s_hs_parallel.n > 0 ? s_hs_parallel.max_us : 0.0) / 1000.0, s_hs_parallel.n);
+         (s_hs_parallel.n > 0 ? s_hs_parallel.max_us : 0.0) / 1000.0,
+         s_hs_parallel.n);
 
   printf("└────────────────────────────────────────────────────────────────────"
          "────────────────────────────────────┘\n");
