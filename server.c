@@ -1495,7 +1495,7 @@ int main(void) {
                 if (payload_len >= KEM_PK_BYTES + DSA_PK_BYTES + 16) {
                   s_idx = session_alloc(ip, port);
                   if (s_idx >= 0) {
-                    /* server_send_ack(g_listen_sock, peer, hdr.seq); */
+                    server_send_ack(g_listen_sock, peer, hdr.seq);
                     session_t *s = &g_sessions[s_idx];
                     s->state = SESSION_WAIT_KEM_ENC;
                     s->last_seen_ns = now_ns();
@@ -1548,7 +1548,7 @@ int main(void) {
 
           if (hdr.type == PKT_CLIENT_HELLO) {
             if (s->state == SESSION_WAIT_KEM_ENC) {
-              /* server_send_ack(g_listen_sock, peer, hdr.seq); */
+              server_send_ack(g_listen_sock, peer, hdr.seq);
             } else if (s->state == SESSION_WAIT_AUTH ||
                        s->state == SESSION_ESTABLISHED) {
               struct iovec iovs[5];
@@ -1569,7 +1569,7 @@ int main(void) {
               iovs[4].iov_base = s->srv_sig;
               iovs[4].iov_len = DSA_SIG_BYTES;
 
-              /* server_send_ack(g_listen_sock, peer, hdr.seq); */
+              server_send_ack(g_listen_sock, peer, hdr.seq);
               server_send_packet_zero_copy(g_listen_sock, peer, s->tx_seq,
                                            PKT_SERVER_HELLO, iovs, 5);
             }
