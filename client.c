@@ -109,6 +109,10 @@ static ssize_t recv_type(conn_t *c, uint8_t want_type,
     for (;;) {
         ssize_t n = pkt_recv(c, &hdr, payload, payload_max, 0);
         if (n < 0) return -1;
+        if (hdr.type == PKT_DISCONNECT) {
+            fprintf(stderr, "\n[client] Server disconnected/reset during handshake.\n");
+            exit(1);
+        }
         if (hdr.type == want_type) { send_ack(c, hdr.seq); return n; }
         if (hdr.type != PKT_ACK && hdr.type != PKT_DATA)
             send_ack(c, hdr.seq);
@@ -137,6 +141,12 @@ static void *rx_thread(void *arg)
         ssize_t n = pkt_recv(a->conn, &hdr, raw, sizeof(raw),
                              RX_POLL_TIMEOUT_US);
         if (n < 0) continue;
+        if (hdr.type == PKT_DISCONNECT) {
+            printf("\n\033[1;31m[client] Server disconnected/shut down.\033[0m\n");
+            g_stop = 1;
+            kill(getpid(), SIGINT);
+            break;
+        }
         if (hdr.type != PKT_DATA) continue;
         if (n < 28) continue;    /* need at least NONCE+TAG */
 

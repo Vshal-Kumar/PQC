@@ -52,6 +52,7 @@
 #define PKT_PING 0x12
 #define PKT_PONG 0x13
 #define PKT_BUSY 0x14
+#define PKT_DISCONNECT 0x15
 
 /* ── Sizing ──────────────────────────────────────────────────────── */
 #define PKT_HDR_BYTES 7

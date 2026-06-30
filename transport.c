@@ -218,6 +218,10 @@ int pkt_send_reliable(conn_t *c, uint8_t type, const uint8_t *payload,
         break;
       }
 
+      if (hdr.type == PKT_DISCONNECT) {
+        return -2;
+      }
+
       if (hdr.type == PKT_ACK && n >= 4) {
         uint32_t acked = ((uint32_t)buf[0] << 24) | ((uint32_t)buf[1] << 16) |
                          ((uint32_t)buf[2] << 8) | (uint32_t)buf[3];

@@ -47,7 +47,8 @@
 
 static int shake256_hash(uint8_t out[64], const uint8_t *in, size_t in_len) {
   EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-  if (!ctx) return -1;
+  if (!ctx)
+    return -1;
   if (EVP_DigestInit_ex(ctx, EVP_shake256(), NULL) != 1) {
     EVP_MD_CTX_free(ctx);
     return -1;
@@ -357,6 +358,10 @@ static int session_alloc(uint32_t ip, uint16_t port) {
     return -1;
   uint32_t idx = g_free_sessions[--g_free_session_count];
   session_t *s = &g_sessions[idx];
+  uint64_t saved_gen = s->generation;
+  memset(s, 0, sizeof(session_t));
+  s->generation = saved_gen;
+
   s->session_id = idx;
   s->ip = ip;
   s->port = port;
@@ -779,24 +784,31 @@ static void *crypto_worker_thread(void *arg) {
       if (job.type == PKT_CLIENT_HELLO) {
         int rc = kem_enc(job.kem_ct, job.session_key, job.client_kem_pk);
         if (rc == 0) {
-          size_t tx_len = 16 + 16 + SESSION_ID_BYTES + KEM_PK_BYTES + DSA_PK_BYTES + DSA_PK_BYTES + KEM_CT_BYTES;
+          size_t tx_len = 16 + 16 + SESSION_ID_BYTES + KEM_PK_BYTES +
+                          DSA_PK_BYTES + DSA_PK_BYTES + KEM_CT_BYTES;
           uint8_t *tx = malloc(tx_len);
           if (tx) {
             size_t tx_off = 0;
-            memcpy(tx + tx_off, job.client_nonce, 16); tx_off += 16;
-            memcpy(tx + tx_off, job.server_nonce, 16); tx_off += 16;
-            
+            memcpy(tx + tx_off, job.client_nonce, 16);
+            tx_off += 16;
+            memcpy(tx + tx_off, job.server_nonce, 16);
+            tx_off += 16;
+
             uint64_t sid64 = job.session_id_val;
             for (int k = 0; k < SESSION_ID_BYTES; k++) {
-              tx[tx_off + k] = (sid64 >> ((SESSION_ID_BYTES - 1 - k) * 8)) & 0xFF;
+              tx[tx_off + k] =
+                  (sid64 >> ((SESSION_ID_BYTES - 1 - k) * 8)) & 0xFF;
             }
             tx_off += SESSION_ID_BYTES;
-            
-            memcpy(tx + tx_off, job.client_kem_pk, KEM_PK_BYTES); tx_off += KEM_PK_BYTES;
-            memcpy(tx + tx_off, job.client_dsa_pk, DSA_PK_BYTES); tx_off += DSA_PK_BYTES;
-            memcpy(tx + tx_off, g_srv_dsa_pk, DSA_PK_BYTES); tx_off += DSA_PK_BYTES;
+
+            memcpy(tx + tx_off, job.client_kem_pk, KEM_PK_BYTES);
+            tx_off += KEM_PK_BYTES;
+            memcpy(tx + tx_off, job.client_dsa_pk, DSA_PK_BYTES);
+            tx_off += DSA_PK_BYTES;
+            memcpy(tx + tx_off, g_srv_dsa_pk, DSA_PK_BYTES);
+            tx_off += DSA_PK_BYTES;
             memcpy(tx + tx_off, job.kem_ct, KEM_CT_BYTES);
-            
+
             uint8_t digest[64];
             if (shake256_hash(digest, tx, tx_len) == 0) {
               size_t siglen = 0;
@@ -811,30 +823,39 @@ static void *crypto_worker_thread(void *arg) {
         }
         comp.status = rc;
       } else if (job.type == PKT_CLIENT_AUTH) {
-        size_t tx_len = 16 + 16 + SESSION_ID_BYTES + KEM_PK_BYTES + DSA_PK_BYTES + DSA_PK_BYTES + KEM_CT_BYTES;
+        size_t tx_len = 16 + 16 + SESSION_ID_BYTES + KEM_PK_BYTES +
+                        DSA_PK_BYTES + DSA_PK_BYTES + KEM_CT_BYTES;
         size_t cl_tx_len = tx_len + DSA_SIG_BYTES;
         uint8_t *cl_tx = malloc(cl_tx_len);
         int rc = -1;
         if (cl_tx) {
           size_t tx_off = 0;
-          memcpy(cl_tx + tx_off, job.client_nonce, 16); tx_off += 16;
-          memcpy(cl_tx + tx_off, job.server_nonce, 16); tx_off += 16;
-          
+          memcpy(cl_tx + tx_off, job.client_nonce, 16);
+          tx_off += 16;
+          memcpy(cl_tx + tx_off, job.server_nonce, 16);
+          tx_off += 16;
+
           uint64_t sid64 = job.session_id_val;
           for (int k = 0; k < SESSION_ID_BYTES; k++) {
-            cl_tx[tx_off + k] = (sid64 >> ((SESSION_ID_BYTES - 1 - k) * 8)) & 0xFF;
+            cl_tx[tx_off + k] =
+                (sid64 >> ((SESSION_ID_BYTES - 1 - k) * 8)) & 0xFF;
           }
           tx_off += SESSION_ID_BYTES;
-          
-          memcpy(cl_tx + tx_off, job.client_kem_pk, KEM_PK_BYTES); tx_off += KEM_PK_BYTES;
-          memcpy(cl_tx + tx_off, job.client_dsa_pk, DSA_PK_BYTES); tx_off += DSA_PK_BYTES;
-          memcpy(cl_tx + tx_off, g_srv_dsa_pk, DSA_PK_BYTES); tx_off += DSA_PK_BYTES;
-          memcpy(cl_tx + tx_off, job.kem_ct, KEM_CT_BYTES); tx_off += KEM_CT_BYTES;
+
+          memcpy(cl_tx + tx_off, job.client_kem_pk, KEM_PK_BYTES);
+          tx_off += KEM_PK_BYTES;
+          memcpy(cl_tx + tx_off, job.client_dsa_pk, DSA_PK_BYTES);
+          tx_off += DSA_PK_BYTES;
+          memcpy(cl_tx + tx_off, g_srv_dsa_pk, DSA_PK_BYTES);
+          tx_off += DSA_PK_BYTES;
+          memcpy(cl_tx + tx_off, job.kem_ct, KEM_CT_BYTES);
+          tx_off += KEM_CT_BYTES;
           memcpy(cl_tx + tx_off, job.srv_sig, DSA_SIG_BYTES);
-          
+
           uint8_t digest[64];
           if (shake256_hash(digest, cl_tx, cl_tx_len) == 0) {
-            rc = dsa_verify(job.sig, job.sig_len, digest, 64, job.client_dsa_pk);
+            rc =
+                dsa_verify(job.sig, job.sig_len, digest, 64, job.client_dsa_pk);
           }
           free(cl_tx);
         }
@@ -1037,7 +1058,8 @@ static void process_completion(const crypto_completion_t *comp) {
 
     /* Derive key using KDF bound to nonces and session ID */
     uint8_t derived_key[DERIVED_KEY_BYTES];
-    kem_derive_key(derived_key, s->session_key, s->client_nonce, s->server_nonce, s->session_id_val);
+    kem_derive_key(derived_key, s->session_key, s->client_nonce,
+                   s->server_nonce, s->session_id_val);
     memcpy(s->session_key, derived_key, 32);
     explicit_bzero(derived_key, sizeof(derived_key));
 
@@ -1504,7 +1526,8 @@ int main(void) {
                     memcpy(s->client_kem_pk, payload, KEM_PK_BYTES);
                     memcpy(s->client_dsa_pk, payload + KEM_PK_BYTES,
                            DSA_PK_BYTES);
-                    memcpy(s->client_nonce, payload + KEM_PK_BYTES + DSA_PK_BYTES, 16);
+                    memcpy(s->client_nonce,
+                           payload + KEM_PK_BYTES + DSA_PK_BYTES, 16);
 
                     RAND_bytes(s->server_nonce, 16);
 
@@ -1541,6 +1564,8 @@ int main(void) {
                 }
               }
             }
+          } else {
+            server_send_packet(g_listen_sock, peer, 0, PKT_DISCONNECT, NULL, 0);
           }
         } else {
           session_t *s = &g_sessions[s_idx];
@@ -1706,6 +1731,18 @@ int main(void) {
       } else {
         cpu_pause();
       }
+    }
+  }
+
+  /* Broadcast PKT_DISCONNECT to all active sessions to shut down clients cleanly */
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    session_t *s = &g_sessions[i];
+    if (s->state == SESSION_ESTABLISHED) {
+      struct sockaddr_in peer;
+      peer.sin_family = AF_INET;
+      peer.sin_port = s->port;
+      peer.sin_addr.s_addr = s->ip;
+      server_send_packet(g_listen_sock, &peer, s->tx_seq, PKT_DISCONNECT, NULL, 0);
     }
   }
 
