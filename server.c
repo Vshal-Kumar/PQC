@@ -1734,7 +1734,8 @@ int main(void) {
     }
   }
 
-  /* Broadcast PKT_DISCONNECT to all active sessions to shut down clients cleanly */
+  /* Broadcast PKT_DISCONNECT to all active sessions to shut down clients
+   * cleanly */
   for (int i = 0; i < MAX_SESSIONS; i++) {
     session_t *s = &g_sessions[i];
     if (s->state == SESSION_ESTABLISHED) {
@@ -1742,7 +1743,8 @@ int main(void) {
       peer.sin_family = AF_INET;
       peer.sin_port = s->port;
       peer.sin_addr.s_addr = s->ip;
-      server_send_packet(g_listen_sock, &peer, s->tx_seq, PKT_DISCONNECT, NULL, 0);
+      server_send_packet(g_listen_sock, &peer, s->tx_seq, PKT_DISCONNECT, NULL,
+                         0);
     }
   }
 

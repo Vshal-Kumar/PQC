@@ -143,9 +143,11 @@ static void *rx_thread(void *arg)
         if (n < 0) continue;
         if (hdr.type == PKT_DISCONNECT) {
             printf("\n\033[1;31m[client] Server disconnected/shut down.\033[0m\n");
-            g_stop = 1;
-            kill(getpid(), SIGINT);
-            break;
+            metrics_print(a->metrics);
+            close(a->conn->sock);
+            explicit_bzero(a->conn->session_key, sizeof(a->conn->session_key));
+            printf("[client] Exit.\n");
+            exit(0);
         }
         if (hdr.type != PKT_DATA) continue;
         if (n < 28) continue;    /* need at least NONCE+TAG */
