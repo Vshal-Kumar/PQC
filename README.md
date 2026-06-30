@@ -303,6 +303,10 @@ chmod +x run.sh
 
 Execute the PQC client on your target client platform and specify the server IP address:
 
+#executing server
+PQC_DISABLE_RATE_LIMIT=1 ./server
+
+
 ```bash
 # Executing on x86_64:
 ./client <SERVER_IP>
