@@ -101,7 +101,15 @@ static void *bg_rx_thread(void *arg)
 
         ipc_hdr_t hdr;
         ssize_t n = ipc_recv_frame(fd, &hdr, buf, sizeof(buf));
-        if (n < 0) break;
+        if (n < 0) {
+            g_stop = 1;
+            if (g_notify_pipe[1] >= 0) {
+                char b = 'Q';
+                ssize_t _w = write(g_notify_pipe[1], &b, 1);
+                (void)_w;
+            }
+            break;
+        }
 
         switch (hdr.type) {
         case IPC_CLIENT_LIST:
@@ -255,6 +263,29 @@ static int connect_to_server(void)
     return fd;
 }
 
+static void print_session_report(void) {
+    char ts[20]; now_hms(ts, sizeof(ts));
+    printf("\n╔══════════════════════════════════════════════╗\n");
+    printf("║         SENDER TERMINAL REPORT  [%s]        ║\n", ts);
+    printf("╠══════════════════════════════════════════════╣\n");
+    pthread_mutex_lock(&g_clients_mu);
+    if (g_client_count == 0) {
+        printf("║  No active clients recorded.                 ║\n");
+    } else {
+        for (int i = 0; i < g_client_count; i++) {
+            printf("║  CLIENT-%02d (%s:%u)\n",
+                   g_clients[i].client_id, g_clients[i].ip_str, g_clients[i].port);
+            printf("║    Messages sent  : %u\n", g_clients[i].msg_count);
+            printf("║    Data sent      : %u KB\n", g_clients[i].bytes_sent_kb);
+            printf("║    Data received  : %u KB\n", g_clients[i].bytes_recv_kb);
+            printf("║    Handshake time : %.2f ms\n", g_clients[i].hs_total_ms);
+            printf("║  ─────────────────────────────────────────── ║\n");
+        }
+    }
+    pthread_mutex_unlock(&g_clients_mu);
+    printf("╚══════════════════════════════════════════════╝\n");
+}
+
 /* ════════════════════════════════════════════════════════════════════
  * main()
  * ════════════════════════════════════════════════════════════════════ */
@@ -331,6 +362,7 @@ int main(void)
             int r = poll(pfds, 2, 1000);
             if (r > 0 && (pfds[1].revents & POLLIN)) {
                 char b; { ssize_t _r = read(g_notify_pipe[0], &b, 1); (void)_r; }
+                if (b == 'Q') { g_stop = 1; break; }
                 need_menu = 1;
             }
             if (r > 0 && (pfds[0].revents & POLLIN)) {
@@ -356,6 +388,7 @@ int main(void)
 
         if (pfds[1].revents & POLLIN) {
             char b; { ssize_t _r = read(g_notify_pipe[0], &b, 1); (void)_r; }
+            if (b == 'Q') { g_stop = 1; break; }
             printf("\r\033[2K");  /* erase line */
             need_menu = 1;
             continue;
@@ -406,6 +439,7 @@ int main(void)
 
         if (pfds[1].revents & POLLIN) {
             char b; { ssize_t _r = read(g_notify_pipe[0], &b, 1); (void)_r; }
+            if (b == 'Q') { g_stop = 1; break; }
             printf("\r\033[2K");
             need_menu = 1;
             continue;
@@ -430,6 +464,7 @@ int main(void)
         need_menu = 1;
     }
 
+    print_session_report();
     close(fd);
     close(g_notify_pipe[0]);
     close(g_notify_pipe[1]);

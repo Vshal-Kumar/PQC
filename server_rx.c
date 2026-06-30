@@ -193,6 +193,23 @@ static int connect_to_server(void)
     return fd;
 }
 
+static void print_session_report(void) {
+    char ts[20]; now_hms(ts, sizeof(ts));
+    printf("\n╔══════════════════════════════════════════════╗\n");
+    printf("║       RECEIVER TERMINAL SESSION REPORT       ║\n");
+    printf("╠══════════════════════════════════════════════╣\n");
+    if (g_tracked_count == 0) {
+        printf("║  No active clients tracked.                  ║\n");
+    } else {
+        for (int i = 0; i < g_tracked_count; i++) {
+            printf("║  CLIENT-%02d (%s:%u) : Received %u messages\n",
+                   g_tracked[i].client_id, g_tracked[i].ip_str,
+                   g_tracked[i].port, g_tracked[i].msg_count);
+        }
+    }
+    printf("╚══════════════════════════════════════════════╝\n");
+}
+
 /* ════════════════════════════════════════════════════════════════════
  * main()
  * ════════════════════════════════════════════════════════════════════ */
@@ -248,14 +265,8 @@ int main(void)
         ipc_hdr_t hdr;
         ssize_t n = ipc_recv_frame(fd, &hdr, buf, sizeof(buf));
         if (n < 0) {
-            printf("\n[rx] Server disconnected. Reconnecting...\n");
-            close(fd); fd = -1;
-            while (!g_stop && fd < 0) {
-                sleep(1); fd = connect_to_server();
-            }
-            if (fd < 0) break;
-            printf("[rx] Reconnected.\n");
-            continue;
+            printf("\n[rx] Server disconnected.\n");
+            break;
         }
 
         switch (hdr.type) {
@@ -307,6 +318,7 @@ int main(void)
         }
     }
 
+    print_session_report();
     if (fd >= 0) close(fd);
     printf("\n[server_rx] Exit.\n");
     return 0;
