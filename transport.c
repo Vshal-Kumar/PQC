@@ -192,7 +192,10 @@ int pkt_send_reliable(conn_t *c, uint8_t type, const uint8_t *payload,
     if (attempt > 0)
       c->tx_seq = our_seq;
 
-    if (pkt_send(c, type, payload, payload_len) < 0) {
+    ssize_t sent = pkt_send(c, type, payload, payload_len);
+    if (sent < 0) {
+      fprintf(stderr, "[transport] pkt_send attempt %d failed: %s (errno=%d)\n", 
+              attempt + 1, strerror(errno), errno);
       usleep(1000);
       continue;
     }
