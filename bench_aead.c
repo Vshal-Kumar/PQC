@@ -1,5 +1,6 @@
 /*
- * bench_aead.c — Standalone AEAD (ChaCha20-Poly1305) Benchmark, Demo, and File Encryption Tool
+ * bench_aead.c — Standalone AEAD (ChaCha20-Poly1305) Benchmark, Demo, and File
+ * Encryption Tool
  *
  * Project: Performance Evaluation of SIMD-Accelerated Post-Quantum
  *          Cryptography on Embedded ARM Platforms
@@ -19,12 +20,12 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <math.h>
+#include <openssl/rand.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <openssl/rand.h>
 
 #include "crypto/aead.h"
 
@@ -120,10 +121,12 @@ static void print_hex(const char *label, const uint8_t *data, size_t len) {
 
 static int hex_to_bytes(const char *hex, uint8_t *bytes, size_t max_len) {
   size_t len = strlen(hex);
-  if (len % 2 != 0 || len / 2 > max_len) return -1;
+  if (len % 2 != 0 || len / 2 > max_len)
+    return -1;
   for (size_t i = 0; i < len; i += 2) {
     unsigned int val;
-    if (sscanf(hex + i, "%2x", &val) != 1) return -1;
+    if (sscanf(hex + i, "%2x", &val) != 1)
+      return -1;
     bytes[i / 2] = (uint8_t)val;
   }
   return (int)(len / 2);
@@ -173,7 +176,8 @@ static uint8_t *read_entire_file(const char *path, size_t *out_size) {
 }
 
 /* Helper to write entire file */
-static int write_entire_file(const char *path, const uint8_t *data, size_t size) {
+static int write_entire_file(const char *path, const uint8_t *data,
+                             size_t size) {
   FILE *f = fopen(path, "wb");
   if (!f) {
     perror("fopen");
@@ -186,7 +190,8 @@ static int write_entire_file(const char *path, const uint8_t *data, size_t size)
 }
 
 /* File encryption handler */
-static int handle_encrypt_file(const char *in_path, const char *out_path, const char *key_hex) {
+static int handle_encrypt_file(const char *in_path, const char *out_path,
+                               const char *key_hex) {
   size_t pt_len = 0;
   uint8_t *pt = read_entire_file(in_path, &pt_len);
   if (!pt) {
@@ -255,7 +260,8 @@ static int handle_encrypt_file(const char *in_path, const char *out_path, const 
     return 1;
   }
 
-  printf("[+] Successfully encrypted %zu bytes -> %zu bytes in '%s'\n", pt_len, total_out_len, out_path);
+  printf("[+] Successfully encrypted %zu bytes -> %zu bytes in '%s'\n", pt_len,
+         total_out_len, out_path);
 
   free(pt);
   free(ct);
@@ -264,7 +270,8 @@ static int handle_encrypt_file(const char *in_path, const char *out_path, const 
 }
 
 /* File decryption handler */
-static int handle_decrypt_file(const char *in_path, const char *out_path, const char *key_hex) {
+static int handle_decrypt_file(const char *in_path, const char *out_path,
+                               const char *key_hex) {
   if (!key_hex) {
     fprintf(stderr, "Error: Decryption requires a key in hex format.\n");
     return 1;
@@ -284,7 +291,8 @@ static int handle_decrypt_file(const char *in_path, const char *out_path, const 
   }
 
   if (file_len < 12 + 16) {
-    fprintf(stderr, "Error: Input file is too small to be a valid encrypted packet.\n");
+    fprintf(stderr,
+            "Error: Input file is too small to be a valid encrypted packet.\n");
     free(file_data);
     return 1;
   }
@@ -305,7 +313,8 @@ static int handle_decrypt_file(const char *in_path, const char *out_path, const 
 
   int pt_len = aead_decrypt(ct, ct_len, key, nonce, tag, pt);
   if (pt_len < 0) {
-    fprintf(stderr, "Error: AEAD decryption failed (Authentication failed - invalid key or tampered file).\n");
+    fprintf(stderr, "Error: AEAD decryption failed (Authentication failed - "
+                    "invalid key or tampered file).\n");
     free(file_data);
     free(pt);
     return 1;
@@ -318,7 +327,8 @@ static int handle_decrypt_file(const char *in_path, const char *out_path, const 
     return 1;
   }
 
-  printf("[+] Successfully decrypted %zu bytes -> %d bytes in '%s'\n", file_len, pt_len, out_path);
+  printf("[+] Successfully decrypted %zu bytes -> %d bytes in '%s'\n", file_len,
+         pt_len, out_path);
 
   free(file_data);
   free(pt);
@@ -329,14 +339,18 @@ int main(int argc, char *argv[]) {
   if (argc > 1) {
     if (strcmp(argv[1], "encrypt") == 0) {
       if (argc < 4) {
-        fprintf(stderr, "Usage: %s encrypt <input_file> <output_file> [key_hex]\n", argv[0]);
+        fprintf(stderr,
+                "Usage: %s encrypt <input_file> <output_file> [key_hex]\n",
+                argv[0]);
         return 1;
       }
       const char *key_hex = (argc > 4) ? argv[4] : NULL;
       return handle_encrypt_file(argv[2], argv[3], key_hex);
     } else if (strcmp(argv[1], "decrypt") == 0) {
       if (argc < 5) {
-        fprintf(stderr, "Usage: %s decrypt <input_file> <output_file> <key_hex>\n", argv[0]);
+        fprintf(stderr,
+                "Usage: %s decrypt <input_file> <output_file> <key_hex>\n",
+                argv[0]);
         return 1;
       }
       return handle_decrypt_file(argv[2], argv[3], argv[4]);
@@ -348,19 +362,25 @@ int main(int argc, char *argv[]) {
     rounds = atoi(argv[1]);
     if (rounds < 10 || rounds > 1000000) {
       fprintf(stderr, "Usage:\n");
-      fprintf(stderr, "  1) %s [rounds]  (10 – 1000000, default %d)\n", argv[0], BENCH_ROUNDS_DEFAULT);
-      fprintf(stderr, "  2) %s encrypt <input_file> <output_file> [key_hex]\n", argv[0]);
-      fprintf(stderr, "  3) %s decrypt <input_file> <output_file> <key_hex>\n", argv[0]);
+      fprintf(stderr, "  1) %s [rounds]  (10 – 1000000, default %d)\n", argv[0],
+              BENCH_ROUNDS_DEFAULT);
+      fprintf(stderr, "  2) %s encrypt <input_file> <output_file> [key_hex]\n",
+              argv[0]);
+      fprintf(stderr, "  3) %s decrypt <input_file> <output_file> <key_hex>\n",
+              argv[0]);
       return 1;
     }
   }
 
-  printf("\n╔══════════════════════════════════════════════════════════════╗\n");
+  printf(
+      "\n╔══════════════════════════════════════════════════════════════╗\n");
   printf("║       PQC Chat — ChaCha20-Poly1305 Cryptographic Demo        ║\n");
-  printf("╚══════════════════════════════════════════════════════════════╝\n\n");
+  printf(
+      "╚══════════════════════════════════════════════════════════════╝\n\n");
 
   /* ── DEMONSTRATION PHASE ────────────────────────────────────────── */
-  const char *msg_text = "PQC Secure Chat: This is a highly confidential post-quantum encrypted message!";
+  const char *msg_text = "PQC Secure Chat: This is a highly confidential "
+                         "post-quantum encrypted message!";
   int pt_len = (int)strlen(msg_text);
 
   uint8_t key[32];
@@ -369,7 +389,8 @@ int main(int argc, char *argv[]) {
   uint8_t *ct = malloc((size_t)pt_len);
   uint8_t *decrypted = malloc((size_t)pt_len + 1);
 
-  if (RAND_bytes(key, sizeof(key)) != 1 || RAND_bytes(nonce, sizeof(nonce)) != 1) {
+  if (RAND_bytes(key, sizeof(key)) != 1 ||
+      RAND_bytes(nonce, sizeof(nonce)) != 1) {
     fprintf(stderr, "Failed to generate random key/nonce\n");
     free(ct);
     free(decrypted);
@@ -385,7 +406,8 @@ int main(int argc, char *argv[]) {
   printf("\n");
 
   /* Encrypt */
-  int ct_len = aead_encrypt((const uint8_t *)msg_text, pt_len, key, nonce, ct, tag);
+  int ct_len =
+      aead_encrypt((const uint8_t *)msg_text, pt_len, key, nonce, ct, tag);
   if (ct_len < 0) {
     fprintf(stderr, "Encryption failed!\n");
     free(ct);
@@ -410,18 +432,23 @@ int main(int argc, char *argv[]) {
 
   printf(" [4] Decrypted Plaintext Verification:\n");
   printf("  Decrypted Msg  : \"%s\"\n", decrypted);
-  printf("  Verification   : %s\n\n", (strcmp(msg_text, (char *)decrypted) == 0) ? "SUCCESS (INTEGRITY VERIFIED)" : "FAILED");
+  printf("  Verification   : %s\n\n", (strcmp(msg_text, (char *)decrypted) == 0)
+                                          ? "SUCCESS (INTEGRITY VERIFIED)"
+                                          : "FAILED");
 
   free(ct);
   free(decrypted);
 
   /* ── STATISTICAL BENCHMARK PHASE ────────────────────────────────── */
   printf("╔══════════════════════════════════════════════════════════════╗\n");
-  printf("║   AEAD Payload Size Dependency Performance (%d rounds)      ║\n", rounds);
-  printf("╚══════════════════════════════════════════════════════════════╝\n\n");
+  printf("║   AEAD Payload Size Dependency Performance (%d rounds)      ║\n",
+         rounds);
+  printf(
+      "╚══════════════════════════════════════════════════════════════╝\n\n");
 
   int payload_sizes[] = {64, 256, 1024, 4096, 16384};
-  const char *payload_labels[] = {"64 Bytes", "256 Bytes", "1 KB (1024B)", "4 KB (4096B)", "16 KB (16384)"};
+  const char *payload_labels[] = {"64 Bytes", "256 Bytes", "1 KB (1024B)",
+                                  "4 KB (4096B)", "16 KB (16384)"};
   int num_sizes = 5;
 
   for (int i = 0; i < num_sizes; i++) {
@@ -451,7 +478,8 @@ int main(int argc, char *argv[]) {
       }
 
       t0 = ns_now();
-      int b_rt_len = aead_decrypt(bench_ct, b_ct_len, key, b_nonce, tag, bench_rt);
+      int b_rt_len =
+          aead_decrypt(bench_ct, b_ct_len, key, b_nonce, tag, bench_rt);
       s_dec.samples[r] = (double)(ns_now() - t0) / 1000.0;
 
       if (b_rt_len < 0) {
@@ -467,15 +495,25 @@ int main(int argc, char *argv[]) {
     double enc_throughput = (double)sz / d_enc.mean; /* B/µs = MB/s */
     double dec_throughput = (double)sz / d_dec.mean;
 
-    printf("┌─ Payload Size: %s ─────────────────────────────────────────────────────────────────┐\n", payload_labels[i]);
-    printf("├──────────────────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────────┬────────────┬──────┤\n");
-    printf("│ Operation        │  Mean (µs) │   Median   │    Min     │    Max     │  Std Dev   │    P95     │    P99     │ Unit │\n");
-    printf("├──────────────────┼────────────┼────────────┼────────────┼────────────┼────────────┼────────────  ────────────┼──────┤\n");
+    printf(
+        "┌─ Payload Size: %s "
+        "─────────────────────────────────────────────────────────────────┐\n",
+        payload_labels[i]);
+    printf("├──────────────────┬────────────┬────────────┬────────────┬────────"
+           "────┬────────────┬────────────┬────────────┬──────┤\n");
+    printf("│ Operation        │  Mean (µs) │   Median   │    Min     │    Max "
+           "    │  Std Dev   │    P95     │    P99     │ Unit │\n");
+    printf("├──────────────────┼────────────┼────────────┼────────────┼────────"
+           "────┼────────────┼────────────  ────────────┼──────┤\n");
     print_stat_row("aead_encrypt", &d_enc, "µs");
     print_stat_row("aead_decrypt", &d_dec, "µs");
-    printf("├──────────────────┴────────────┴────────────┴────────────┴────────────┴────────────┴────────────  ────────────┴──────┤\n");
-    printf("│ Throughput: Encrypt: %8.1f MB/s  │  Decrypt: %8.1f MB/s                                                  │\n", enc_throughput, dec_throughput);
-    printf("└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘\n\n");
+    printf("├──────────────────┴────────────┴────────────┴────────────┴────────"
+           "────┴────────────┴────────────  ────────────┴──────┤\n");
+    printf("│ Throughput: Encrypt: %8.1f MB/s  │  Decrypt: %8.1f MB/s          "
+           "                                        │\n",
+           enc_throughput, dec_throughput);
+    printf("└──────────────────────────────────────────────────────────────────"
+           "────────────────────────────────────────────┘\n\n");
 
     free(bench_pt);
     free(bench_ct);
