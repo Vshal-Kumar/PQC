@@ -5,6 +5,7 @@
 /client
 /bench_pqc
 /bench_nclient
+/bench_aead
 /bench_pqc_arm
 /bench_nclient_arm
 /client_arm
