@@ -61,7 +61,7 @@
 
 /* ── Reliability ─────────────────────────────────────────────────── */
 #define ACK_TIMEOUT_US 1000000
-#define RETX_MAX 6
+#define RETX_MAX 10
 #define RX_POLL_TIMEOUT_US 10000 /* 10 ms */
 
 /* ── Session ID ──────────────────────────────────────────────────── */

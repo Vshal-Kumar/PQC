@@ -313,9 +313,10 @@ static void *client_thread(void *arg) {
   /* Synchronize: all clients start handshake simultaneously */
   pthread_barrier_wait(&g_start_barrier);
 
-  /* Stagger startup slightly (0.5ms per client) to pace packet injection */
+  /* Stagger startup smoothly based on client count to pace network injection */
   if (g_num_clients > 10) {
-    usleep(idx * 500);
+    uint32_t delay_us = (g_num_clients > 256) ? 1500 : 500;
+    usleep((useconds_t)(idx * delay_us));
   }
 
   r->start_ns = ns_now();
@@ -337,14 +338,18 @@ static void *client_thread(void *arg) {
                     DSA_SIG_BYTES + 128];
   ssize_t n = -1;
 
-  for (int attempt = 0; attempt < 10; attempt++) {
-    if (attempt > 0)
+  for (int attempt = 0; attempt < 12; attempt++) {
+    if (attempt > 0) {
       c.tx_seq = 1;
+      /* Desynchronize retry waves with randomized jitter */
+      usleep((useconds_t)(10000 + (rand() % 50000)));
+    }
     if (pkt_send(&c, PKT_CLIENT_HELLO, hello, (uint16_t)sizeof(hello)) < 0)
       goto fail;
 
+    int timeout_ms = 2500 + (rand() % 500);
     n = recv_type_timeout(&c, PKT_SERVER_HELLO, srv_hello, sizeof(srv_hello),
-                          2000);
+                          timeout_ms);
     if (n >= (ssize_t)min_len) {
       break;
     }

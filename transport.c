@@ -189,8 +189,11 @@ int pkt_send_reliable(conn_t *c, uint8_t type, const uint8_t *payload,
   uint32_t our_seq = c->tx_seq;
 
   for (int attempt = 0; attempt < RETX_MAX; attempt++) {
-    if (attempt > 0)
+    if (attempt > 0) {
       c->tx_seq = our_seq;
+      /* Desynchronize retry waves with jitter */
+      usleep((useconds_t)(5000 + (rand() % 25000)));
+    }
 
     ssize_t sent = pkt_send(c, type, payload, payload_len);
     if (sent < 0) {
