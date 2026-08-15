@@ -41,7 +41,7 @@
 
 /* ── Endpoint ────────────────────────────────────────────────────── */
 #define SERVER_PORT 9877
-#define SERVER_ADDR "10.59.57.160"
+#define SERVER_ADDR "10.170.14.160"
 
 /* ── Packet types ────────────────────────────────────────────────── */
 #define PKT_CLIENT_HELLO 0x01
@@ -57,12 +57,10 @@
 /* ── Sizing ──────────────────────────────────────────────────────── */
 #define PKT_HDR_BYTES 7
 #define DATA_CHUNK_MAX 16384
-#define PKT_BUF_MAX 65507
+#define PKT_BUF_MAX 16512
 
 /* ── Reliability ─────────────────────────────────────────────────── */
-#define ACK_TIMEOUT_US                                                         \
-  300000 /* 300 ms — robust for real networks and queues                     \
-          */
+#define ACK_TIMEOUT_US 1000000
 #define RETX_MAX 6
 #define RX_POLL_TIMEOUT_US 10000 /* 10 ms */
 

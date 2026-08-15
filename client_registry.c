@@ -14,6 +14,9 @@
 
 /* ── Internal state ──────────────────────────────────────────────── */
 static client_slot_t  g_slots[MAX_CLIENTS];
+static int            g_free_slots[MAX_CLIENTS];
+static int            g_free_slot_count = 0;
+static int            g_active_clients_count = 0;
 static pthread_mutex_t g_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* ── registry_init ───────────────────────────────────────────────── */
@@ -21,10 +24,13 @@ void registry_init(void)
 {
     pthread_mutex_lock(&g_registry_mutex);
     memset(g_slots, 0, sizeof(g_slots));
+    g_free_slot_count = MAX_CLIENTS;
+    g_active_clients_count = 0;
     for (int i = 0; i < MAX_CLIENTS; i++) {
         pthread_mutex_init(&g_slots[i].tx_mutex, NULL);
         g_slots[i].active    = 0;
         g_slots[i].client_id = 0;
+        g_free_slots[i]      = MAX_CLIENTS - 1 - i; /* Stack order 0..MAX_CLIENTS-1 */
     }
     pthread_mutex_unlock(&g_registry_mutex);
 }
@@ -34,18 +40,13 @@ int registry_add(const conn_t *conn, const metrics_t *metrics)
 {
     pthread_mutex_lock(&g_registry_mutex);
 
-    /* Find the first free slot */
-    int slot = -1;
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (!g_slots[i].active) { slot = i; break; }
-    }
-
-    if (slot < 0) {
+    if (g_free_slot_count <= 0) {
         pthread_mutex_unlock(&g_registry_mutex);
         fprintf(stderr, "[registry] MAX_CLIENTS (%d) reached\n", MAX_CLIENTS);
         return -1;
     }
 
+    int slot = g_free_slots[--g_free_slot_count];
     client_slot_t *s = &g_slots[slot];
 
     /* Copy connection and metrics */
@@ -67,6 +68,7 @@ int registry_add(const conn_t *conn, const metrics_t *metrics)
     s->last_send_ns    = 0;
     s->last_recv_ns    = 0;
     s->active          = 1;
+    g_active_clients_count++;
 
     int id = s->client_id;
     pthread_mutex_unlock(&g_registry_mutex);
@@ -83,6 +85,12 @@ void registry_remove(int client_id)
     if (g_slots[slot].active && g_slots[slot].client_id == client_id) {
         g_slots[slot].active    = 0;
         g_slots[slot].client_id = 0;
+        if (g_free_slot_count < MAX_CLIENTS) {
+            g_free_slots[g_free_slot_count++] = slot;
+        }
+        if (g_active_clients_count > 0) {
+            g_active_clients_count--;
+        }
     }
     pthread_mutex_unlock(&g_registry_mutex);
 }
@@ -192,10 +200,5 @@ metrics_t *registry_get_metrics(int client_id)
 /* ── registry_count ──────────────────────────────────────────────── */
 int registry_count(void)
 {
-    int n = 0;
-    pthread_mutex_lock(&g_registry_mutex);
-    for (int i = 0; i < MAX_CLIENTS; i++)
-        if (g_slots[i].active) n++;
-    pthread_mutex_unlock(&g_registry_mutex);
-    return n;
+    return __atomic_load_n(&g_active_clients_count, __ATOMIC_ACQUIRE);
 }

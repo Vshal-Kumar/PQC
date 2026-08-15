@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIMD-Accelerated PQC Framework | Clean Presentation Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-slate: #fafafa;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --text-main: #1e293b;
+      --text-title: #0f172a;
+      --text-muted: #64748b;
+      --primary-blue: #1e3a8a;
+      --accent-blue: #0284c7;
+      --emerald: #10b981;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-slate);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: var(--accent-blue);
+      width: 8.33%;
+      transition: width 0.3s ease;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 100;
+    }
+
+    .viewport {
+      flex: 1;
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 60px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem 3rem;
+    }
+
+    .slide {
+      position: absolute;
+      width: calc(100% - 6rem);
+      max-width: 1250px;
+      height: calc(100% - 1.5rem);
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 2.2rem 2.8rem;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(10px);
+      transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+      overflow-y: auto;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      z-index: 10;
+    }
+
+    .slide-header {
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid #f1f5f9;
+      padding-bottom: 0.75rem;
+    }
+
+    .slide-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--text-title);
+      letter-spacing: -0.01em;
+    }
+
+    .slide-subtitle {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      color: var(--primary-blue);
+    }
+
+    .card-text {
+      font-size: 0.92rem;
+      color: var(--text-main);
+      line-height: 1.6;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+    }
+
+    th {
+      background: var(--text-title);
+      color: #ffffff;
+      text-align: left;
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      font-size: 0.82rem;
+    }
+
+    td {
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      color: var(--text-main);
+    }
+
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    .badge-verified {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .controls {
+      height: 60px;
+      background: #ffffff;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2.5rem;
+      z-index: 100;
+    }
+
+    .btn {
+      background: #f1f5f9;
+      border: 1px solid var(--card-border);
+      color: var(--text-title);
+      padding: 0.5rem 1.1rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-primary {
+      background: var(--primary-blue);
+      color: #ffffff;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background: var(--text-title);
+    }
+
+    .slide-counter {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-content {
+      background: #ffffff;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 700px;
+      padding: 2rem;
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="progress-bar" id="progressBar"></div>
+
+  <div class="viewport">
+
+    <!-- SLIDE 1: TITLE PAGE -->
+    <div class="slide active" id="slide-1">
+      <div style="background: var(--text-title); color: #ffffff; border-radius: 10px; padding: 2rem; margin-bottom: 1.5rem;">
+        <h1 style="font-size: 2.1rem; font-weight: 700; margin-bottom: 0.6rem;">SIMD-Accelerated Post-Quantum Cryptography Framework</h1>
+        <p style="font-size: 1.05rem; color: #bae6fd;">Heterogeneous x86_64 Server ↔ ARM Client Networking with Formal Verification & Vector Acceleration</p>
+      </div>
+      <div class="card">
+        <div class="card-title">PRESENTER & PROJECT METADATA</div>
+        <p class="card-text">• <strong>Presenter:</strong> Cybersecurity & Systems Engineering Intern</p>
+        <p class="card-text">• <strong>Organization:</strong> Systems & Post-Quantum Cryptography Research Lab</p>
+        <p class="card-text">• <strong>Key Stack:</strong> C11, Linux <code>io_uring</code>, OpenSSL 3.0, liboqs, ProVerif, AVX2, ARM NEON</p>
+        <p class="card-text">• <strong>Primary Achievement:</strong> Sub-millisecond 4-way PQC Handshake (0.85 ms) & 20 Formally Verified Security Proofs</p>
+      </div>
+    </div>
+
+    <!-- SLIDE 2: INTRO PAGE -->
+    <div class="slide" id="slide-2">
+      <div class="slide-header">
+        <h2 class="slide-title">Introduction & Project Context</h2>
+        <p class="slide-subtitle">Overview of internship domain, research objectives, and core technological scope.</p>
+      </div>
+      <div class="slide-body grid-2">
+        <div class="card">
+          <div class="card-title">👋 About the Project & Domain</div>
+          <p class="card-text">
+            • <strong>Internship Focus:</strong> Design, optimization, and formal analysis of post-quantum network protocols.<br><br>
+            • <strong>Core Research Domain:</strong> Post-Quantum Cryptography (PQC), Microarchitectural Acceleration (SIMD), and Formal Verification (ProVerif).<br><br>
+            • <strong>Deployment Targets:</strong> x86_64 servers communicating with embedded ARM edge nodes (Raspberry Pi 3B / 4B / 5).
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">🎯 Primary Internship Scope</div>
+          <p class="card-text">
+            • <strong>1. Protocol Engineering:</strong> Build lightweight C11 UDP 4-way handshake using NIST algorithms.<br><br>
+            • <strong>2. Hardware Acceleration:</strong> AVX2/BMI2 vectorization for x86 & NEON 128-bit SIMD for ARM.<br><br>
+            • <strong>3. Formal Cybersecurity:</strong> Prove secrecy, mutual auth, and PFS in ProVerif.<br><br>
+            • <strong>4. Empirical Benchmarking:</strong> Profile latency, throughput, energy, and memory.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 3: PROBLEM STATEMENT -->
+    <div class="slide" id="slide-3">
+      <div class="slide-header">
+        <h2 class="slide-title">Problem Statement & Motivation</h2>
+        <p class="slide-subtitle">Addressing the impending quantum threat and resource constraints on embedded nodes.</p>
+      </div>
+      <div class="slide-body grid-2">
+        <div class="card">
+          <div class="card-title">⚠️ The Quantum Threat</div>
+          <p class="card-text">
+            • <strong>Vulnerability of Classical Crypto:</strong> Shor's algorithm breaks RSA and ECC.<br><br>
+            • <strong>"Harvest Now, Decrypt Later":</strong> Adversaries store today's encrypted network traffic to decrypt once quantum hardware matures.<br><br>
+            • <strong>NIST Standardization:</strong> Mandates migration to ML-KEM (FIPS 203) and ML-DSA (FIPS 204).
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">🧩 Embedded Performance Bottlenecks</div>
+          <p class="card-text">
+            • <strong>Large Key Sizes:</strong> ML-KEM-768 PK = 1,184 B; ML-DSA-65 signature = 3,293 B (vs classical ECC 64 B).<br><br>
+            • <strong>Heavy Lattice Math:</strong> Polynomial vector multiplication and Number Theoretic Transforms (NTT) strain low-power CPUs.<br><br>
+            • <strong>Resource Constraints:</strong> Unoptimized PQC degrades connection times on ARM edge hardware.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 4: SCOPE & CONTRIBUTIONS -->
+    <div class="slide" id="slide-4">
+      <div class="slide-header">
+        <h2 class="slide-title">Project Scope & Core Engineering Contributions</h2>
+        <p class="slide-subtitle">Four core pillars implemented during the internship.</p>
+      </div>
+      <div class="slide-body grid-2">
+        <div class="card">
+          <div class="card-title">1. High-Performance C11 Protocol Engine</div>
+          <p class="card-text">• Lightweight 4-way UDP PQC handshake in C11.<br>• Sub-millisecond connection time (0.85 ms) over LAN.<br>• Decoupled headers, nonces, and session key state.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">2. Dual SIMD Acceleration Pipeline</div>
+          <p class="card-text">• 256-bit AVX2 & BMI2 for x86_64 host servers.<br>• 128-bit NEON & VFPv4 vectorization for ARM nodes.<br>• Up to 3.2x polynomial multiplication speedup.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">3. Decoupled POSIX IPC Server Engine</div>
+          <p class="card-text">• Linux <code>io_uring</code> async I/O for socket concurrency.<br>• Decoupled UDP daemon from UI via UNIX sockets.<br>• Integrated <code>server_rx</code> and <code>server_tx</code> consoles.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--emerald);">4. Formally Verified Security Model</div>
+          <p class="card-text">• Applied Pi-Calculus model in ProVerif.<br>• Verified 20 security properties under Dolev-Yao model.<br>• Proven PFS, Mutual Auth, and Replay Resistance.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 5: METHODOLOGY -->
+    <div class="slide" id="slide-5">
+      <div class="slide-header">
+        <h2 class="slide-title">Methodology & Implementation Pipeline</h2>
+        <p class="slide-subtitle">A structured five-phase pipeline from primitive selection to validated execution.</p>
+      </div>
+      <div class="slide-body" style="gap: 0.8rem;">
+        <div class="card">
+          <div class="card-title">Phase 1: Primitive Selection</div>
+          <p class="card-text">NIST FIPS 203 ML-KEM-768 & FIPS 204 ML-DSA-65 standardized parameters.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">Phase 2: Formal Verification</div>
+          <p class="card-text">ProVerif Applied Pi-Calculus protocol modeling for Secrecy & Perfect Forward Secrecy.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Phase 3: C11 Protocol Engine</div>
+          <p class="card-text">Custom 4-way UDP handshake state machine & ChaCha20-Poly1305 AEAD streaming.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">Phase 4: SIMD Optimization</div>
+          <p class="card-text">AVX2 (x86) and NEON (ARM) vector acceleration for lattice polynomial math.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--emerald);">Phase 5: Empirical Benchmarking</div>
+          <p class="card-text">Profiling via <code>bench_pqc</code>, <code>bench_nclient</code>, and <code>bench_aead</code> tools.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 6: ARCHITECTURE -->
+    <div class="slide" id="slide-6">
+      <div class="slide-header">
+        <h2 class="slide-title">System Architecture & Handshake Flow</h2>
+        <p class="slide-subtitle">4-Way PQC UDP protocol sequence and decoupled POSIX IPC server engine.</p>
+      </div>
+      <div class="slide-body grid-2">
+        <div class="card">
+          <div class="card-title">🔄 4-Way PQC Handshake Protocol</div>
+          <p class="card-text" style="line-height: 1.6;">
+            <strong>1. PKT_CLIENT_HELLO:</strong> Client ──► Server: (KEM_PK_c, DSA_PK_c, Nonce_c)<br>
+            <strong>2. PKT_SERVER_HELLO:</strong> Server ──► Client: (DSA_PK_s, KEM_CT, SessionID, Nonce_s, Sig_s)<br>
+            <strong>3. PKT_CLIENT_AUTH:</strong> Client ──► Server: (Sig_c over transcript)<br>
+            <strong>4. PKT_ACK & Active:</strong> Key derived via SHAKE256 KDF. AEAD active.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">🖥️ Decoupled POSIX IPC Server Engine</div>
+          <p class="card-text" style="line-height: 1.6;">
+            • <strong>server Daemon:</strong> Listens on UDP port 9877 using <code>io_uring</code> async I/O.<br>
+            • <strong>server_rx Console:</strong> Connects via <code>/tmp/pqc_rx.sock</code> UNIX socket.<br>
+            • <strong>server_tx Console:</strong> Connects via <code>/tmp/pqc_tx.sock</code> UNIX socket.<br>
+            • <strong>Zero Display Latency:</strong> Logging decoupled from network routing.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 7: CRYPTOGRAPHY -->
+    <div class="slide" id="slide-7">
+      <div class="slide-header">
+        <h2 class="slide-title">Cryptographic Specifications</h2>
+        <p class="slide-subtitle">NIST Category 3 (~AES-192) standardized cipher suite selection.</p>
+      </div>
+      <div class="slide-body">
+        <table>
+          <thead>
+            <tr>
+              <th>Primitive</th>
+              <th>Standard / Algorithm</th>
+              <th>Security Category</th>
+              <th>Primary Function</th>
+              <th>Key / Artifact Sizes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>KEM</strong></td>
+              <td>ML-KEM-768 (Kyber768)</td>
+              <td>NIST Cat 3 (~AES-192)</td>
+              <td>Ephemeral Key Exchange</td>
+              <td>PK: 1,184 B | CT: 1,088 B</td>
+            </tr>
+            <tr>
+              <td><strong>DSA</strong></td>
+              <td>ML-DSA-65 (Dilithium3)</td>
+              <td>NIST Cat 3 (~AES-192)</td>
+              <td>Mutual Auth & Signing</td>
+              <td>PK: 1,952 B | Sig: 3,293 B</td>
+            </tr>
+            <tr>
+              <td><strong>AEAD</strong></td>
+              <td>ChaCha20-Poly1305</td>
+              <td>256-bit Key</td>
+              <td>Authenticated Encryption</td>
+              <td>Key: 32 B | Nonce: 12 B | Tag: 16 B</td>
+            </tr>
+            <tr>
+              <td><strong>Hash & KDF</strong></td>
+              <td>SHAKE256</td>
+              <td>Extendable Output (XOF)</td>
+              <td>Transcript & Key Derivation</td>
+              <td>Variable Output Length</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">💡 Hybrid Operational Security</div>
+          <p class="card-text">Combines forward-secret ephemeral ML-KEM-768 key exchange with ML-DSA-65 digital signature authentication. Once established via SHAKE256 KDF, communications switch to ChaCha20-Poly1305 AEAD payload streaming.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 8: FORMAL VERIFICATION -->
+    <div class="slide" id="slide-8">
+      <div class="slide-header">
+        <h2 class="slide-title">Formal Security Verification (ProVerif)</h2>
+        <p class="slide-subtitle">Applied Pi-Calculus mathematical proofs under Dolev-Yao attacker model.</p>
+      </div>
+      <div class="slide-body grid-2">
+        <table>
+          <thead>
+            <tr>
+              <th>Security Property</th>
+              <th>Result</th>
+              <th>ProVerif Formal Query</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Session Key Secrecy</td>
+              <td><span class="badge-verified">VERIFIED</span></td>
+              <td><code>query attacker(session_key_secret)</code></td>
+            </tr>
+            <tr>
+              <td>Client Payload Secrecy</td>
+              <td><span class="badge-verified">VERIFIED</span></td>
+              <td><code>query attacker(client_data)</code></td>
+            </tr>
+            <tr>
+              <td>Server Payload Secrecy</td>
+              <td><span class="badge-verified">VERIFIED</span></td>
+              <td><code>query attacker(server_data)</code></td>
+            </tr>
+            <tr>
+              <td>Injective Mutual Auth</td>
+              <td><span class="badge-verified">VERIFIED</span></td>
+              <td><code>inj-event(server_accepts) ==> client_initiates</code></td>
+            </tr>
+            <tr>
+              <td>Perfect Forward Secrecy</td>
+              <td><span class="badge-verified">VERIFIED</span></td>
+              <td>Phase 1 long-term key leak query</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="card">
+          <div class="card-title" style="color: var(--emerald);">🔍 Verification Highlights</div>
+          <p class="card-text" style="line-height: 1.6;">
+            • <strong>Dolev-Yao Attacker Model:</strong> Active adversary controls network packets.<br>
+            • <strong>Phase-Based PFS Proof:</strong> Phase 0 honest sessions; Phase 1 long-term key leak. Phase 0 session keys remain secret.<br>
+            • <strong>Attack Immunity:</strong> Resistant to KEM substitution, UKS attacks, and reflection.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 9: SIMD VECTOR ACCEL -->
+    <div class="slide" id="slide-9">
+      <div class="slide-header">
+        <h2 class="slide-title">SIMD Hardware Acceleration & Toolchain</h2>
+        <p class="slide-subtitle">Microarchitectural vectorization and isolated arm64_ref build environment.</p>
+      </div>
+      <div class="slide-body grid-2">
+        <div class="card">
+          <div class="card-title">⚡ SIMD Acceleration Pipeline</div>
+          <p class="card-text" style="line-height: 1.6;">
+            • <strong>x86_64 Server:</strong> AVX2 256-bit + BMI2 instruction set. <strong>3.2x Speedup</strong>.<br>
+            • <strong>ARM64 Client:</strong> 128-bit NEON SIMD vector registers. <strong>2.8x Speedup</strong>.<br>
+            • <strong>ARM32 Client:</strong> NEON + VFPv4 hard-float execution. <strong>2.1x Speedup</strong>.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">🛠️ Portable arm64_ref Toolchain</div>
+          <p class="card-text" style="line-height: 1.6;">
+            • <strong>The Challenge:</strong> Cross-compiling ARM binaries on x86 host leads to OpenSSL static library architecture mismatches (<code>ELFCLASS64</code>).<br>
+            • <strong>The Solution:</strong> Self-contained reference layout (<code>arm64_ref/</code>) housing ARM64 pre-compiled static libraries (<code>libcrypto.a</code>, <code>liboqs.a</code>).
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 10: EXPERIMENTAL RESULTS -->
+    <div class="slide" id="slide-10">
+      <div class="slide-header">
+        <h2 class="slide-title">Experimental Testbed & Empirical Results</h2>
+        <p class="slide-subtitle">Hardware evaluation matrix, primitive timings, and performance KPIs.</p>
+      </div>
+      <div class="slide-body grid-2">
+        <table>
+          <thead>
+            <tr>
+              <th>Operation (μs)</th>
+              <th>x86 Server</th>
+              <th>Pi 5</th>
+              <th>Pi 4B</th>
+              <th>Pi 3B</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ML-KEM KeyGen</td>
+              <td>14.2 μs</td>
+              <td>45.8 μs</td>
+              <td>98.4 μs</td>
+              <td>245.1 μs</td>
+            </tr>
+            <tr>
+              <td>ML-KEM Encap</td>
+              <td>18.6 μs</td>
+              <td>58.2 μs</td>
+              <td>122.6 μs</td>
+              <td>310.5 μs</td>
+            </tr>
+            <tr>
+              <td>ML-KEM Decap</td>
+              <td>15.1 μs</td>
+              <td>49.6 μs</td>
+              <td>104.2 μs</td>
+              <td>268.0 μs</td>
+            </tr>
+            <tr>
+              <td>ML-DSA Sign</td>
+              <td>62.4 μs</td>
+              <td>185.3 μs</td>
+              <td>395.0 μs</td>
+              <td>980.2 μs</td>
+            </tr>
+            <tr>
+              <td>ML-DSA Verify</td>
+              <td>24.8 μs</td>
+              <td>76.1 μs</td>
+              <td>158.4 μs</td>
+              <td>412.6 μs</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="grid-2" style="gap: 1rem;">
+          <div class="card" style="text-align: center;">
+            <div class="card-title" style="font-size: 1.7rem;">0.85 ms</div>
+            <p class="card-text">Single Client LAN Handshake</p>
+          </div>
+          <div class="card" style="text-align: center;">
+            <div class="card-title" style="font-size: 1.7rem; color: var(--emerald);">850 HS/s</div>
+            <p class="card-text">Peak Server Throughput</p>
+          </div>
+          <div class="card" style="text-align: center;">
+            <div class="card-title" style="font-size: 1.7rem; color: var(--accent-blue);">12.4 ms</div>
+            <p class="card-text">P99 Latency (500 Clients)</p>
+          </div>
+          <div class="card" style="text-align: center;">
+            <div class="card-title" style="font-size: 1.7rem;">1.8 mJ</div>
+            <p class="card-text">Energy / Handshake (Pi 5)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 11: SUMMARY -->
+    <div class="slide" id="slide-11">
+      <div class="slide-header">
+        <h2 class="slide-title">Summary & Key Internship Takeaways</h2>
+        <p class="slide-subtitle">Core accomplishments, performance gains, and engineering insights.</p>
+      </div>
+      <div class="slide-body grid-3">
+        <div class="card">
+          <div class="card-title">1. Production C11 PQC</div>
+          <p class="card-text">Developed lightweight, low-latency 4-way UDP PQC handshake protocol achieving sub-millisecond connection times (0.85 ms RTT).</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--accent-blue);">2. Hardware Accel & Scale</div>
+          <p class="card-text">Applied SIMD vectorization (AVX2 & NEON) achieving up to 3.2x speedup, scaling throughput to 850 handshakes/sec.</p>
+        </div>
+        <div class="card">
+          <div class="card-title" style="color: var(--emerald);">3. Formally Verified</div>
+          <p class="card-text">Built Applied Pi-Calculus model in ProVerif mathematically proving 20 formal security properties including PFS.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLIDE 12: THANK YOU -->
+    <div class="slide" id="slide-12">
+      <div style="background: var(--text-title); color: #ffffff; border-radius: 12px; padding: 3.5rem 2rem; text-align: center; margin-top: 2rem;">
+        <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 0.8rem;">Thank You!</h1>
+        <p style="font-size: 1.3rem; color: #bae6fd; font-weight: 600; margin-bottom: 1.5rem;">Questions & Technical Discussion</p>
+        <p style="font-size: 1rem; color: #cbd5e1;">SIMD-Accelerated Post-Quantum Cryptography Framework & Benchmark Suite</p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="prevBtn">← Prev</button>
+    <span class="slide-counter" id="slideCounter">Slide 1 / 12</span>
+    <button class="btn" id="nextBtn">Next →</button>
+  </div>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    let currentSlide = 0;
+
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const slideCounter = document.getElementById('slideCounter');
+    const progressBar = document.getElementById('progressBar');
+
+    function updateSlide(index) {
+      slides.forEach((slide, i) => {
+        if (i === index) {
+          slide.classList.add('active');
+        } else {
+          slide.classList.remove('active');
+        }
+      });
+      currentSlide = index;
+      slideCounter.textContent = `Slide ${currentSlide + 1} / ${totalSlides}`;
+      progressBar.style.width = `${((currentSlide + 1) / totalSlides) * 100}%`;
+    }
+
+    prevBtn.addEventListener('click', () => {
+      if (currentSlide > 0) updateSlide(currentSlide - 1);
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentSlide < totalSlides - 1) updateSlide(currentSlide + 1);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        if (currentSlide < totalSlides - 1) updateSlide(currentSlide + 1);
+      } else if (e.key === 'ArrowLeft') {
+        if (currentSlide > 0) updateSlide(currentSlide - 1);
+      }
+    });
+
+    updateSlide(0);
+  </script>
+</body>
+</html>

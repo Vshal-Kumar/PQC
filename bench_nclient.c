@@ -215,35 +215,41 @@ static void on_signal(int s) {
 
 static ssize_t recv_type_timeout(conn_t *c, uint8_t want, uint8_t *payload,
                                  size_t max, int timeout_ms) {
-  struct timeval tv;
-  tv.tv_sec = 0;
-  tv.tv_usec = timeout_ms * 1000;
-  setsockopt(c->sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
   pkt_hdr_t hdr;
   ssize_t result = -1;
-  double deadline = now_ms() + timeout_ms;
 
-  while (now_ms() < deadline) {
+  struct timeval tv;
+  tv.tv_sec = timeout_ms / 1000;
+  tv.tv_usec = (timeout_ms % 1000) * 1000;
+  if (tv.tv_sec == 0 && tv.tv_usec < 1000)
+    tv.tv_usec = 1000;
+  setsockopt(c->sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+  double deadline = now_ms() + timeout_ms;
+  for (;;) {
+    double remaining = deadline - now_ms();
+    if (remaining <= 0.0)
+      break;
+
     ssize_t n = pkt_recv(c, &hdr, payload, max, 0);
     if (n < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        cpu_pause();
-        continue;
+        break;
       }
       continue;
     }
 
     if (hdr.type == want) {
-      /* send_ack(c, hdr.seq); */
       result = n;
       break;
     }
   }
 
   /* Restore default timeout */
-  tv.tv_usec = 50000;
-  setsockopt(c->sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  struct timeval tv_def;
+  tv_def.tv_sec = 0;
+  tv_def.tv_usec = 50000;
+  setsockopt(c->sock, SOL_SOCKET, SO_RCVTIMEO, &tv_def, sizeof(tv_def));
 
   return result;
 }
@@ -307,9 +313,9 @@ static void *client_thread(void *arg) {
   /* Synchronize: all clients start handshake simultaneously */
   pthread_barrier_wait(&g_start_barrier);
 
-  /* Stagger startup slightly to prevent flooding network buffer queues */
+  /* Stagger startup slightly (0.5ms per client) to pace packet injection */
   if (g_num_clients > 10) {
-    usleep(idx * 50); // Stagger threads by 50us (1000 threads spread over 50ms)
+    usleep(idx * 500);
   }
 
   r->start_ns = ns_now();
@@ -338,7 +344,7 @@ static void *client_thread(void *arg) {
       goto fail;
 
     n = recv_type_timeout(&c, PKT_SERVER_HELLO, srv_hello, sizeof(srv_hello),
-                          300);
+                          2000);
     if (n >= (ssize_t)min_len) {
       break;
     }
@@ -528,6 +534,7 @@ static void *client_thread(void *arg) {
     r->msg_max_rtt_ms = (r->msgs_recv > 0) ? m.msg_max_rtt_ms : 0.0;
   }
 
+  pkt_send(&c, PKT_DISCONNECT, NULL, 0);
   close(sock);
   explicit_bzero(kem_sk, sizeof(kem_sk));
   explicit_bzero(dsa_sk, sizeof(dsa_sk));
@@ -537,6 +544,7 @@ static void *client_thread(void *arg) {
 fail:
   r->end_ns = ns_now();
   r->hs_total_us = (double)(r->end_ns - r->start_ns) / 1000.0;
+  pkt_send(&c, PKT_DISCONNECT, NULL, 0);
   close(sock);
   explicit_bzero(kem_sk, sizeof(kem_sk));
   explicit_bzero(dsa_sk, sizeof(dsa_sk));
@@ -550,6 +558,15 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, on_signal);
   signal(SIGTERM, on_signal);
   signal(SIGPIPE, SIG_IGN);
+
+  /* Ensure sufficient file descriptors for high concurrency */
+  struct rlimit rlim;
+  if (getrlimit(RLIMIT_NOFILE, &rlim) == 0) {
+    if (rlim.rlim_cur < 65536) {
+      rlim.rlim_cur = (rlim.rlim_max >= 65536) ? 65536 : rlim.rlim_max;
+      setrlimit(RLIMIT_NOFILE, &rlim);
+    }
+  }
 
   g_num_msgs = 5; /* Handshake + 5 data messages for metrics by default */
   if (argc > 4) {
@@ -598,17 +615,22 @@ int main(int argc, char *argv[]) {
 
   pthread_barrier_init(&g_start_barrier, NULL, (unsigned)g_num_clients);
 
-  /* Spawn all client threads */
+  /* Spawn all client threads with customized stack size */
   printf("  Spawning %d client threads...\n", g_num_clients);
   pthread_t *tids = malloc(sizeof(pthread_t) * (size_t)g_num_clients);
+
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+  pthread_attr_setstacksize(&attr, 512 * 1024); /* 512 KB per thread */
 
   uint64_t wall_start = ns_now();
   cpu_ticks_t cpu_start, cpu_end;
   get_cpu_ticks(&cpu_start);
 
   for (int i = 0; i < g_num_clients; i++) {
-    pthread_create(&tids[i], NULL, client_thread, (void *)(intptr_t)i);
+    pthread_create(&tids[i], &attr, client_thread, (void *)(intptr_t)i);
   }
+  pthread_attr_destroy(&attr);
 
   /* Wait for all to finish */
   for (int i = 0; i < g_num_clients; i++) {

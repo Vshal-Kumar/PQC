@@ -470,6 +470,7 @@ int main(int argc, char *argv[])
 
     metrics_print(&metrics);
 
+    pkt_send(&c, PKT_DISCONNECT, NULL, 0);
     close(sock);
     explicit_bzero(c.session_key, sizeof(c.session_key));
     printf("[client] Exit.\n");

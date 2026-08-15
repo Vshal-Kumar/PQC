@@ -70,11 +70,11 @@ static int shake256_hash(uint8_t out[64], const uint8_t *in, size_t in_len) {
 /* ── Sizing and Bounds ───────────────────────────────────────────── */
 #define MAX_SESSIONS 10000
 #define SESSION_HASH_SIZE (MAX_SESSIONS * 2)
-#define JOB_QUEUE_SIZE 4096
-#define COMP_QUEUE_SIZE 4096
+#define JOB_QUEUE_SIZE 8192
+#define WORKER_COMP_QUEUE_SIZE 4096
 #define NUM_RECV_BUFFERS 1024
 #define NUM_WORKERS 3
-#define RATE_LIMIT_HASH_SIZE 2048
+#define RATE_LIMIT_HASH_SIZE 16384
 
 #define AUTH_CTX_LEN (SESSION_ID_BYTES + DSA_PK_BYTES + KEM_SS_BYTES)
 
@@ -147,78 +147,71 @@ typedef struct {
 } crypto_job_queue_t;
 
 typedef struct {
-  crypto_completion_t completions[COMP_QUEUE_SIZE];
-  unsigned char ready[COMP_QUEUE_SIZE];
-  unsigned long head;
-  unsigned long tail;
-} completion_queue_t;
+  crypto_completion_t completions[WORKER_COMP_QUEUE_SIZE];
+  unsigned long head __attribute__((aligned(64)));
+  unsigned long tail __attribute__((aligned(64)));
+} worker_comp_queue_t;
 
 static crypto_job_queue_t g_job_queue;
-static completion_queue_t g_comp_queue;
+static worker_comp_queue_t g_worker_comp_queues[NUM_WORKERS];
+static pthread_mutex_t g_job_queue_mu = PTHREAD_MUTEX_INITIALIZER;
 static sem_t g_job_sem;
 static int g_in_flight_jobs = 0;
 
-/* ── Lock-free Queue Operations ──────────────────────────────────── */
+/* ── Queue Operations ────────────────────────────────────────────── */
 static int push_job(const crypto_job_t *job) {
+  pthread_mutex_lock(&g_job_queue_mu);
   unsigned long tail = g_job_queue.tail;
-  unsigned long head = __atomic_load_n(&g_job_queue.head, __ATOMIC_ACQUIRE);
+  unsigned long head = g_job_queue.head;
   if (tail - head >= JOB_QUEUE_SIZE) {
+    pthread_mutex_unlock(&g_job_queue_mu);
     return -1; /* Queue full */
   }
   g_job_queue.jobs[tail % JOB_QUEUE_SIZE] = *job;
-  __atomic_store_n(&g_job_queue.tail, tail + 1, __ATOMIC_RELEASE);
+  g_job_queue.tail = tail + 1;
   __atomic_add_fetch(&g_in_flight_jobs, 1, __ATOMIC_SEQ_CST);
+  pthread_mutex_unlock(&g_job_queue_mu);
   sem_post(&g_job_sem);
   return 0;
 }
 
 static int pop_job(crypto_job_t *job_out) {
-  unsigned long head;
-  while (1) {
-    head = __atomic_load_n(&g_job_queue.head, __ATOMIC_ACQUIRE);
-    unsigned long tail = __atomic_load_n(&g_job_queue.tail, __ATOMIC_ACQUIRE);
-    if (head == tail) {
-      return -1; /* Queue empty */
-    }
-    if (__atomic_compare_exchange_n(&g_job_queue.head, &head, head + 1, 1,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-      *job_out = g_job_queue.jobs[head % JOB_QUEUE_SIZE];
-      return 0;
-    }
+  pthread_mutex_lock(&g_job_queue_mu);
+  unsigned long head = g_job_queue.head;
+  unsigned long tail = g_job_queue.tail;
+  if (head == tail) {
+    pthread_mutex_unlock(&g_job_queue_mu);
+    return -1; /* Queue empty */
   }
-}
-
-static int push_completion(const crypto_completion_t *comp) {
-  unsigned long tail;
-  while (1) {
-    tail = __atomic_load_n(&g_comp_queue.tail, __ATOMIC_ACQUIRE);
-    unsigned long head = __atomic_load_n(&g_comp_queue.head, __ATOMIC_ACQUIRE);
-    if (tail - head >= COMP_QUEUE_SIZE) {
-      return -1; /* Queue full */
-    }
-    if (__atomic_compare_exchange_n(&g_comp_queue.tail, &tail, tail + 1, 1,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-      break;
-    }
-  }
-  unsigned long idx = tail % COMP_QUEUE_SIZE;
-  g_comp_queue.completions[idx] = *comp;
-  __atomic_store_n(&g_comp_queue.ready[idx], 1, __ATOMIC_RELEASE);
+  *job_out = g_job_queue.jobs[head % JOB_QUEUE_SIZE];
+  g_job_queue.head = head + 1;
+  pthread_mutex_unlock(&g_job_queue_mu);
   return 0;
 }
 
-static int pop_completion(crypto_completion_t *comp_out) {
-  unsigned long head = g_comp_queue.head;
-  unsigned long tail = __atomic_load_n(&g_comp_queue.tail, __ATOMIC_ACQUIRE);
-  if (head == tail)
-    return -1; /* Queue empty */
-  unsigned long idx = head % COMP_QUEUE_SIZE;
-  if (!__atomic_load_n(&g_comp_queue.ready[idx], __ATOMIC_ACQUIRE)) {
-    return -1; /* Write in progress */
+static inline int push_worker_completion(int worker_idx, const crypto_completion_t *comp) {
+  if (worker_idx < 0 || worker_idx >= NUM_WORKERS) return -1;
+  worker_comp_queue_t *q = &g_worker_comp_queues[worker_idx];
+  unsigned long tail = q->tail;
+  unsigned long head = __atomic_load_n(&q->head, __ATOMIC_ACQUIRE);
+  if (tail - head >= WORKER_COMP_QUEUE_SIZE) {
+    return -1; /* Queue full */
   }
-  *comp_out = g_comp_queue.completions[idx];
-  __atomic_store_n(&g_comp_queue.ready[idx], 0, __ATOMIC_RELEASE);
-  g_comp_queue.head = head + 1;
+  q->completions[tail % WORKER_COMP_QUEUE_SIZE] = *comp;
+  __atomic_store_n(&q->tail, tail + 1, __ATOMIC_RELEASE);
+  return 0;
+}
+
+static inline int pop_worker_completion(int worker_idx, crypto_completion_t *comp_out) {
+  if (worker_idx < 0 || worker_idx >= NUM_WORKERS) return -1;
+  worker_comp_queue_t *q = &g_worker_comp_queues[worker_idx];
+  unsigned long head = q->head;
+  unsigned long tail = __atomic_load_n(&q->tail, __ATOMIC_ACQUIRE);
+  if (head == tail) {
+    return -1; /* Queue empty */
+  }
+  *comp_out = q->completions[head % WORKER_COMP_QUEUE_SIZE];
+  __atomic_store_n(&q->head, head + 1, __ATOMIC_RELEASE);
   __atomic_sub_fetch(&g_in_flight_jobs, 1, __ATOMIC_SEQ_CST);
   return 0;
 }
@@ -253,6 +246,7 @@ typedef struct {
 
   uint32_t rx_seq;
   uint32_t tx_seq;
+  uint32_t auth_seq;
   uint64_t tx_nonce_ctr;
 
   uint64_t current_job_id;
@@ -404,14 +398,21 @@ static void session_free(int idx) {
 /* ── Rate Limiter ────────────────────────────────────────────────── */
 typedef struct {
   uint32_t ip;
+  uint16_t port;
   double tokens;
   uint64_t last_update_ns;
+  int occupied;
 } rate_limit_entry_t;
 
 static rate_limit_entry_t g_rate_limit_table[RATE_LIMIT_HASH_SIZE];
 static int g_disable_rate_limit = 0;
 
-static int rate_limit_check(uint32_t ip) {
+static inline uint32_t rate_limit_hash(uint32_t ip, uint16_t port) {
+  uint32_t h = session_hash(ip, port);
+  return h % RATE_LIMIT_HASH_SIZE;
+}
+
+static int rate_limit_check(uint32_t ip, uint16_t port) {
   if (g_disable_rate_limit) {
     return 1;
   }
@@ -419,25 +420,33 @@ static int rate_limit_check(uint32_t ip) {
   if ((host_ip >> 24) == 127) {
     return 1;
   }
-  uint32_t h = ip % RATE_LIMIT_HASH_SIZE;
-  rate_limit_entry_t *e = &g_rate_limit_table[h];
+  uint32_t h = rate_limit_hash(ip, port);
   uint64_t now = now_ns();
-  if (e->ip != ip) {
-    e->ip = ip;
-    e->tokens = 20.0;
-    e->last_update_ns = now;
-    return 1;
+  for (int i = 0; i < 8; i++) {
+    int slot = (int)((h + (uint32_t)i) % RATE_LIMIT_HASH_SIZE);
+    rate_limit_entry_t *e = &g_rate_limit_table[slot];
+    if (!e->occupied || (e->ip == ip && e->port == port)) {
+      if (!e->occupied || (e->ip != ip || e->port != port)) {
+        e->ip = ip;
+        e->port = port;
+        e->tokens = 20.0; /* Burst allowance of 20 */
+        e->last_update_ns = now;
+        e->occupied = 1;
+        return 1;
+      }
+      double elapsed_sec = (double)(now - e->last_update_ns) / 1e9;
+      e->tokens += elapsed_sec * 50.0; /* 50 packets per second refill rate */
+      if (e->tokens > 20.0)
+        e->tokens = 20.0;
+      e->last_update_ns = now;
+      if (e->tokens >= 1.0) {
+        e->tokens -= 1.0;
+        return 1;
+      }
+      return 0;
+    }
   }
-  double elapsed_sec = (double)(now - e->last_update_ns) / 1e9;
-  e->tokens += elapsed_sec * 50.0; /* 50 packets per second refill rate */
-  if (e->tokens > 20.0)
-    e->tokens = 20.0;
-  e->last_update_ns = now;
-  if (e->tokens >= 1.0) {
-    e->tokens -= 1.0;
-    return 1;
-  }
-  return 0;
+  return 1;
 }
 
 /* ── io_uring Recv Buffers ───────────────────────────────────────── */
@@ -454,8 +463,12 @@ static struct io_uring g_ring;
 
 static void submit_recv_request(int idx) {
   struct io_uring_sqe *sqe = io_uring_get_sqe(&g_ring);
-  if (!sqe)
-    return;
+  if (!sqe) {
+    io_uring_submit(&g_ring);
+    sqe = io_uring_get_sqe(&g_ring);
+    if (!sqe)
+      return;
+  }
   io_uring_prep_recvmsg(sqe, g_listen_sock, &g_recv_bufs[idx].msg, 0);
   io_uring_sqe_set_data(sqe, (void *)(intptr_t)idx);
 }
@@ -880,7 +893,8 @@ static void *crypto_worker_thread(void *arg) {
       }
       pthread_mutex_unlock(&g_telemetry_mu);
 
-      while (push_completion(&comp) != 0) {
+      int worker_idx = core_id - 1;
+      while (push_worker_completion(worker_idx, &comp) != 0) {
         cpu_pause();
       }
     } else {
@@ -1115,6 +1129,8 @@ static void process_completion(const crypto_completion_t *comp) {
     s->state = SESSION_ESTABLISHED;
     s->established_time_ns = now_ns();
     s->last_seen_ns = now_ns();
+
+    server_send_ack(g_listen_sock, &peer, s->auth_seq);
 
     ipc_push_client_list();
     pthread_mutex_lock(&g_ipc_tx_mu);
@@ -1402,7 +1418,7 @@ int main(void) {
 
   /* Initialize queues */
   memset(&g_job_queue, 0, sizeof(g_job_queue));
-  memset(&g_comp_queue, 0, sizeof(g_comp_queue));
+  memset(g_worker_comp_queues, 0, sizeof(g_worker_comp_queues));
   sem_init(&g_job_sem, 0, 0);
 
   /* Spawn Crypto Worker Threads (Cores 1-3) */
@@ -1440,7 +1456,7 @@ int main(void) {
 
   struct io_uring_params params;
   memset(&params, 0, sizeof(params));
-  if (io_uring_queue_init_params(2048, &g_ring, &params) < 0) {
+  if (io_uring_queue_init_params(4096, &g_ring, &params) < 0) {
     perror("io_uring_queue_init");
     return 1;
   }
@@ -1468,11 +1484,13 @@ int main(void) {
   int main_idle_spin = 0;
   while (!g_stop) {
     int worked = 0;
-    /* 1. Process worker completions */
-    crypto_completion_t comp;
-    while (pop_completion(&comp) == 0) {
-      process_completion(&comp);
-      worked = 1;
+    /* 1. Process worker completions across all worker queues */
+    for (int w = 0; w < NUM_WORKERS; w++) {
+      crypto_completion_t comp;
+      while (pop_worker_completion(w, &comp) == 0) {
+        process_completion(&comp);
+        worked = 1;
+      }
     }
 
     /* 2. Poll io_uring CQ (non-blocking) */
@@ -1500,19 +1518,16 @@ int main(void) {
         int s_idx = session_hash_lookup(ip, port);
         if (s_idx < 0) {
           if (hdr.type == PKT_CLIENT_HELLO) {
-            if (rate_limit_check(ip)) {
+            if (rate_limit_check(ip, port)) {
               unsigned long queue_load =
-                  g_job_queue.tail -
-                  __atomic_load_n(&g_job_queue.head, __ATOMIC_ACQUIRE);
-              if (queue_load >= 3600) {
+                  g_job_queue.tail - g_job_queue.head;
+              if (queue_load >= (JOB_QUEUE_SIZE - 64)) {
                 static uint64_t last_busy_ns = 0;
                 uint64_t now = now_ns();
                 if (now - last_busy_ns > 10000000ULL) {
                   last_busy_ns = now;
                   server_send_packet(g_listen_sock, peer, 0, PKT_BUSY, NULL, 0);
                 }
-              } else if (queue_load >= 800) {
-                server_send_packet(g_listen_sock, peer, 0, PKT_BUSY, NULL, 0);
               } else {
                 if (payload_len >= KEM_PK_BYTES + DSA_PK_BYTES + 16) {
                   s_idx = session_alloc(ip, port);
@@ -1564,14 +1579,14 @@ int main(void) {
                 }
               }
             }
-          } else {
-            server_send_packet(g_listen_sock, peer, 0, PKT_DISCONNECT, NULL, 0);
           }
         } else {
           session_t *s = &g_sessions[s_idx];
           s->last_seen_ns = now_ns();
 
-          if (hdr.type == PKT_CLIENT_HELLO) {
+          if (hdr.type == PKT_DISCONNECT) {
+            session_free(s_idx);
+          } else if (hdr.type == PKT_CLIENT_HELLO) {
             if (s->state == SESSION_WAIT_KEM_ENC) {
               server_send_ack(g_listen_sock, peer, hdr.seq);
             } else if (s->state == SESSION_WAIT_AUTH ||
@@ -1600,9 +1615,9 @@ int main(void) {
             }
           } else if (hdr.type == PKT_CLIENT_AUTH) {
             if (s->state == SESSION_WAIT_AUTH) {
-              server_send_ack(g_listen_sock, peer, hdr.seq);
               if (payload_len >= DSA_SIG_BYTES) {
                 s->state = SESSION_WAIT_AUTH_VER;
+                s->auth_seq = hdr.seq;
                 s->current_job_id++;
 
                 memcpy(s->sig, payload, DSA_SIG_BYTES);
@@ -1722,10 +1737,10 @@ int main(void) {
       if (++main_idle_spin > 1000) {
         if (__atomic_load_n(&g_in_flight_jobs, __ATOMIC_ACQUIRE) == 0) {
           struct io_uring_cqe *wait_cqe;
-          io_uring_wait_cqe(&g_ring, &wait_cqe);
+          struct __kernel_timespec ts_cqe = {0, 1000000}; // 1 ms timeout
+          io_uring_wait_cqe_timeout(&g_ring, &wait_cqe, &ts_cqe);
         } else {
-          struct timespec ts = {0, 10000}; // 10 us
-          nanosleep(&ts, NULL);
+          sched_yield();
         }
         main_idle_spin = 0;
       } else {
