@@ -1,4 +1,4 @@
-# 🛡️ High-Performance SIMD-Accelerated Post-Quantum Cryptography (PQC) Framework
+# 🛡️ Cross-Platform Evaluation of Scalable Post-Quantum Secure Communication
 
 [![Language: C11](https://img.shields.io/badge/Language-C11-00599C.svg?logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C11_(C_standard_revision))
 [![Architecture: Heterogeneous](https://img.shields.io/badge/Architecture-x86__64%20%7C%20ARM64%20%7C%20ARM32-blue.svg)](https://arm.com)
@@ -530,9 +530,9 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 If you use this framework, benchmarks, or formal verification models in academic research, please cite:
 
 ```bibtex
-@misc{pqc_simd_benchmarking_2026,
+@misc{pqc_cross_platform_evaluation_2026,
   author = {Vishal Kumar},
-  title = {SIMD-Accelerated Post-Quantum Cryptography Framework and Multi-Platform Benchmarking Suite},
+  title = {Cross-Platform Evaluation of Scalable Post-Quantum Secure Communication},
   year = {2026},
   publisher = {GitHub},
   howpublished = {\url{https://github.com/Vshal-Kumar/PQC}}
